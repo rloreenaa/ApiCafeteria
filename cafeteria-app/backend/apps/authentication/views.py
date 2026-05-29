@@ -15,7 +15,8 @@ from .serializers import UserSerializer, UpdateProfileSerializer
 @permission_classes([permissions.IsAuthenticated])
 def me(request):
     """Devuelve el perfil completo del usuario autenticado."""
-    serializer = UserSerializer(request.user)
+    user = User.objects.select_related('profile').get(pk=request.user.pk)
+    serializer = UserSerializer(user)
     return Response(serializer.data)
 
 class UpdateProfileView(generics.UpdateAPIView):
@@ -52,11 +53,13 @@ def google_auth_callback(request):
         profile.avatar_url = avatar
         profile.save()
 
-    refresh = RefreshToken.for_user(user)
+    # Recargar usuario con perfil actualizado
+    user_fresh = User.objects.select_related('profile').get(pk=user.pk)
+    refresh = RefreshToken.for_user(user_fresh)
     return Response({
         'access': str(refresh.access_token),
         'refresh': str(refresh),
-        'user': UserSerializer(user).data,
+        'user': UserSerializer(user_fresh).data,
     })
 
 @api_view(['POST'])
@@ -64,6 +67,10 @@ def google_auth_callback(request):
 def demo_login(request):
     """Login de demostración sin Google OAuth. Solo para desarrollo."""
     role = request.data.get('role', 'student')
+
+    # Validar que el rol sea válido
+    if role not in ('student', 'admin'):
+        return Response({'error': 'Rol inválido'}, status=status.HTTP_400_BAD_REQUEST)
 
     if role == 'admin':
         email = 'admin@cafeteria.com'
@@ -86,9 +93,12 @@ def demo_login(request):
     profile.role = role
     profile.save()
 
-    refresh = RefreshToken.for_user(user)
+    # Recargar usuario desde BD para que el perfil esté actualizado en memoria
+    user_fresh = User.objects.select_related('profile').get(pk=user.pk)
+
+    refresh = RefreshToken.for_user(user_fresh)
     return Response({
         'access': str(refresh.access_token),
         'refresh': str(refresh),
-        'user': UserSerializer(user).data,
+        'user': UserSerializer(user_fresh).data,
     })
